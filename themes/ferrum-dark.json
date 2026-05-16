@@ -1,0 +1,120 @@
+{
+	"name": "Ferrum Dark",
+	"type": "dark",
+	"colors": {
+		"editor.background":              "#1a1a1e",
+		"editor.foreground":              "#d4cfc8",
+		"editor.lineHighlightBackground": "#252530",
+		"editor.selectionBackground":     "#3a3a50",
+		"editorCursor.foreground":        "#e8a050",
+		"editorLineNumber.foreground":    "#4a4a5a",
+		"editorLineNumber.activeForeground": "#888890"
+	},
+	"tokenColors": [
+		{
+			"name": "Comments",
+			"scope": "comment",
+			"settings": { "foreground": "#5a6a5a", "fontStyle": "italic" }
+		},
+		{
+			"name": "Strings",
+			"scope": "string",
+			"settings": { "foreground": "#a8c878" }
+		},
+		{
+			"name": "Escape sequences",
+			"scope": "constant.character.escape",
+			"settings": { "foreground": "#c8e898" }
+		},
+		{
+			"name": "Numbers",
+			"scope": "constant.numeric",
+			"settings": { "foreground": "#d4a860" }
+		},
+		{
+			"name": "Clock and duration literals",
+			"scope": [
+				"constant.numeric.clock.ferrum",
+				"constant.numeric.duration.ferrum"
+			],
+			"settings": { "foreground": "#e8b870", "fontStyle": "bold" }
+		},
+		{
+			"name": "Boolean and pin-state literals",
+			"scope": [
+				"constant.language.boolean.ferrum",
+				"constant.language.pinstate.ferrum"
+			],
+			"settings": { "foreground": "#e8c860", "fontStyle": "bold" }
+		},
+		{
+			"name": "Section keywords (CONFIG DEFINE CREATE DECLARE FUNCTION RUN)",
+			"scope": "keyword.other.section.ferrum",
+			"settings": { "foreground": "#e87840", "fontStyle": "bold" }
+		},
+		{
+			"name": "Control flow (IF ELSE LOOP FOR EVERY RETURN CALL etc.)",
+			"scope": "keyword.control.ferrum",
+			"settings": { "foreground": "#c86880" }
+		},
+		{
+			"name": "Hardware commands (TURN SET READ DELAY PRINT etc.)",
+			"scope": "keyword.other.command.ferrum",
+			"settings": { "foreground": "#78b8d8" }
+		},
+		{
+			"name": "Ownership keywords (GIVE LEND BORROW)",
+			"scope": "storage.modifier.ownership.ferrum",
+			"settings": { "foreground": "#d878c8", "fontStyle": "bold italic" }
+		},
+		{
+			"name": "Interface types (INPUT OUTPUT PWM etc.)",
+			"scope": "support.type.interface.ferrum",
+			"settings": { "foreground": "#70c8a8" }
+		},
+		{
+			"name": "Qualifiers (BRIGHTNESS SPEED ANGLE etc.)",
+			"scope": "support.type.qualifier.ferrum",
+			"settings": { "foreground": "#60b898" }
+		},
+		{
+			"name": "Data type names (Integer Decimal Boolean etc.)",
+			"scope": "storage.type.ferrum",
+			"settings": { "foreground": "#88b8e8" }
+		},
+		{
+			"name": "Built-in functions (abs clamp map etc.)",
+			"scope": "support.function.builtin.ferrum",
+			"settings": { "foreground": "#c8a8e8" }
+		},
+		{
+			"name": "Logical operators (AND OR NOT IS)",
+			"scope": "keyword.operator.logical.ferrum",
+			"settings": { "foreground": "#c86880" }
+		},
+		{
+			"name": "Comparison and arithmetic operators",
+			"scope": [
+				"keyword.operator.comparison.ferrum",
+				"keyword.operator.arithmetic.ferrum",
+				"keyword.operator.assignment.ferrum"
+			],
+			"settings": { "foreground": "#d0c8b0" }
+		},
+		{
+			"name": "Function names",
+			"scope": "entity.name.function.ferrum",
+			"settings": { "foreground": "#f0d080", "fontStyle": "bold" }
+		},
+		{
+			"name": "Device type names",
+			"scope": "entity.name.type.ferrum",
+			"settings": { "foreground": "#80d8c0", "fontStyle": "bold" }
+		},
+		{
+			"name": "Identifiers",
+			"scope": "variable.other.ferrum",
+			"settings": { "foreground": "#d4cfc8" }
+		}
+	]
+}

@@ -1,0 +1,1697 @@
+// ================================================================
+// FERRUM — VS CODE EXTENSION + MONACO EDITOR INTEGRATION
+// ferrum_vscode_extension
+//
+// Every file is clearly delimited by:
+//
+//   ╔══ FILE: path/to/file ══╗
+//   ...
+//   ╚══ END FILE ══╝
+//
+// Contents:
+//   ── VS CODE EXTENSION ───────────────────────────────────────
+//   1.  package.json                    — extension manifest
+//   2.  syntaxes/ferrum.tmLanguage.json — TextMate grammar
+//   3.  language-configuration.json    — bracket/comment config
+//   4.  themes/ferrum-dark.json        — colour theme
+//   5.  snippets/ferrum.json           — code snippets
+//   6.  src/extension.ts               — extension entry point
+//   7.  src/ferrumLsp.ts               — LSP client wiring
+//   8.  .vscode/launch.json            — debug config
+//   9.  tsconfig.json
+//  10.  README.md
+//
+//   ── MONACO EDITOR INTEGRATION ───────────────────────────────
+//  11.  monaco/ferrumLanguage.ts       — register language + grammar
+//  12.  monaco/ferrumTheme.ts          — colour theme tokens
+//  13.  monaco/ferrumCompletion.ts     — completion item provider
+//  14.  monaco/ferrumDiagnostics.ts    — error marker bridge
+//  15.  monaco/index.ts                — single import entry point
+//
+// NOTE ON REUSE
+//   The TextMate grammar (file 2) is used verbatim by both VS Code
+//   and Monaco via the `monaco-editor-textmate` adapter.
+//   The theme token colours (file 12) are derived from file 4.
+//   The completion item list (file 13) mirrors the snippets (file 5).
+//   Everything is designed so that Tauri+Vue can host Monaco with
+//   full feature parity to the VS Code extension.
+// ================================================================
+
+
+// ╔══ FILE: ferrum-vscode/package.json ══╗
+{
+  "name": "ferrum-lang",
+  "displayName": "Ferrum",
+  "description": "Language support for the Ferrum embedded DSL (.fe files)",
+  "version": "0.1.0",
+  "publisher": "ferrum-lang",
+  "engines": { "vscode": "^1.85.0" },
+  "categories": ["Programming Languages"],
+  "icon": "images/ferrum-icon.png",
+  "keywords": ["ferrum", "embedded", "microbit", "rp2040", "iot", "education"],
+  "repository": { "type": "git", "url": "https://github.com/ferrum-lang/ferrum-vscode" },
+
+  "activationEvents": [],
+
+  "main": "./out/extension.js",
+
+  "contributes": {
+    "languages": [
+      {
+        "id": "ferrum",
+        "aliases": ["Ferrum", "ferrum"],
+        "extensions": [".fe"],
+        "configuration": "./language-configuration.json",
+        "icon": {
+          "light": "./images/ferrum-icon.png",
+          "dark":  "./images/ferrum-icon.png"
+        }
+      }
+    ],
+    "grammars": [
+      {
+        "language": "ferrum",
+        "scopeName": "source.ferrum",
+        "path": "./syntaxes/ferrum.tmLanguage.json"
+      }
+    ],
+    "themes": [
+      {
+        "label": "Ferrum Dark",
+        "uiTheme": "vs-dark",
+        "path": "./themes/ferrum-dark.json"
+      }
+    ],
+    "snippets": [
+      {
+        "language": "ferrum",
+        "path": "./snippets/ferrum.json"
+      }
+    ],
+    "commands": [
+      {
+        "command": "ferrum.compile",
+        "title": "Ferrum: Compile",
+        "icon": "$(play)"
+      },
+      {
+        "command": "ferrum.check",
+        "title": "Ferrum: Check (type-check only)"
+      },
+      {
+        "command": "ferrum.showTokens",
+        "title": "Ferrum: Show Token Stream (debug)"
+      },
+      {
+        "command": "ferrum.showAst",
+        "title": "Ferrum: Show AST (debug)"
+      }
+    ],
+    "menus": {
+      "editor/title": [
+        {
+          "command": "ferrum.compile",
+          "when": "resourceExtname == .fe",
+          "group": "navigation"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Ferrum",
+      "properties": {
+        "ferrum.compilerPath": {
+          "type": "string",
+          "default": "ferrum",
+          "description": "Path to the ferrum compiler binary"
+        },
+        "ferrum.enableLsp": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable the Ferrum language server for inline diagnostics"
+        },
+        "ferrum.autoCheckOnSave": {
+          "type": "boolean",
+          "default": true,
+          "description": "Run ferrum check automatically on file save"
+        }
+      }
+    },
+    "problemMatchers": [
+      {
+        "name": "ferrum",
+        "owner": "ferrum",
+        "fileLocation": ["relative", "${workspaceFolder}"],
+        "pattern": [
+          {
+            "regexp": "^\\[(.*?):(\\d+):(\\d+)\\]\\s+(error|warning)\\[([A-Z]\\d+)\\]:\\s+(.*)$",
+            "file": 1,
+            "line": 2,
+            "column": 3,
+            "severity": 4,
+            "code": 5,
+            "message": 6
+          },
+          {
+            "regexp": "^\\s+Suggestion:\\s+(.*)$",
+            "message": 1,
+            "loop": true
+          }
+        ]
+      }
+    ],
+    "taskDefinitions": [
+      {
+        "type": "ferrum",
+        "required": ["task"],
+        "properties": {
+          "task": {
+            "type": "string",
+            "enum": ["compile", "check"]
+          }
+        }
+      }
+    ]
+  },
+
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "lint": "eslint src --ext ts"
+  },
+
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/vscode": "^1.85.0",
+    "typescript": "^5.3.0",
+    "@vscode/vsce": "^2.22.0"
+  },
+
+  "dependencies": {
+    "vscode-languageclient": "^9.0.1"
+  }
+}
+// ╚══ END FILE ══╝
+
+
+// ╔══ FILE: ferrum-vscode/syntaxes/ferrum.tmLanguage.json ══╗
+//
+// TextMate grammar for Ferrum (.fe files).
+//
+// SCOPE NAMING CONVENTIONS (TextMate standard)
+//   keyword.control.*       — control flow: IF, ELSE, LOOP, FOR, etc.
+//   keyword.other.*         — other keywords: DEFINE, CREATE, DECLARE, etc.
+//   storage.type.*          — type names: Integer, Decimal, etc.
+//   storage.modifier.*      — ownership keywords: GIVE, LEND, BORROW
+//   entity.name.function.*  — function names in definitions
+//   entity.name.type.*      — device type names in definitions
+//   variable.other.*        — identifiers
+//   constant.numeric.*      — numeric literals
+//   string.quoted.*         — string literals
+//   comment.line.*          — comments
+//   support.function.*      — built-in functions
+//   keyword.operator.*      — operators
+//
+// CASE INSENSITIVITY
+//   Ferrum keywords are case-insensitive. TextMate regex uses (?i)
+//   inline flags to match any capitalisation without duplicating rules.
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "Ferrum",
+  "scopeName": "source.ferrum",
+  "fileTypes": ["fe"],
+
+  "patterns": [
+    { "include": "#comment" },
+    { "include": "#string" },
+    { "include": "#number" },
+    { "include": "#section_keywords" },
+    { "include": "#control_flow" },
+    { "include": "#hardware_commands" },
+    { "include": "#ownership_keywords" },
+    { "include": "#interface_types" },
+    { "include": "#qualifiers" },
+    { "include": "#type_names" },
+    { "include": "#builtin_functions" },
+    { "include": "#boolean_literals" },
+    { "include": "#pin_state_literals" },
+    { "include": "#operators" },
+    { "include": "#function_definition" },
+    { "include": "#device_definition" },
+    { "include": "#identifier" }
+  ],
+
+  "repository": {
+
+    "comment": {
+      "name": "comment.line.double-dash.ferrum",
+      "match": "--.*$"
+    },
+
+    "string": {
+      "name": "string.quoted.double.ferrum",
+      "begin": "\"",
+      "end": "\"",
+      "patterns": [
+        {
+          "name": "constant.character.escape.ferrum",
+          "match": "\\\\[\"\\\\n]"
+        }
+      ]
+    },
+
+    "number": {
+      "patterns": [
+        {
+          "name": "constant.numeric.hex.ferrum",
+          "match": "\\b0[xX][0-9a-fA-F]+\\b"
+        },
+        {
+          "name": "constant.numeric.float.ferrum",
+          "match": "\\b[0-9]+\\.[0-9]+\\b"
+        },
+        {
+          "name": "constant.numeric.clock.ferrum",
+          "match": "(?i)\\b[0-9]+MHZ\\b"
+        },
+        {
+          "name": "constant.numeric.duration.ferrum",
+          "match": "\\b[0-9]+(ms|s)\\b"
+        },
+        {
+          "name": "constant.numeric.integer.ferrum",
+          "match": "\\b[0-9]+\\b"
+        }
+      ]
+    },
+
+    "section_keywords": {
+      "patterns": [
+        {
+          "name": "keyword.other.section.ferrum",
+          "match": "(?i)\\b(CONFIG|DEFINE|CREATE|DECLARE|FUNCTION|RUN)\\b"
+        }
+      ]
+    },
+
+    "control_flow": {
+      "patterns": [
+        {
+          "name": "keyword.control.ferrum",
+          "match": "(?i)\\b(IF|ELSE|LOOP|FOR|IN|RANGE|EVERY|BREAK|CONTINUE|RETURN|CALL)\\b"
+        }
+      ]
+    },
+
+    "hardware_commands": {
+      "patterns": [
+        {
+          "name": "keyword.other.command.ferrum",
+          "match": "(?i)\\b(TURN|SET|TOGGLE|READ_PERCENT|READ|DELAY|PRINT|ON|PIN|PULL|UP|DOWN|INIT|AS|CONSTANT)\\b"
+        }
+      ]
+    },
+
+    "ownership_keywords": {
+      "patterns": [
+        {
+          "name": "storage.modifier.ownership.ferrum",
+          "match": "(?i)\\b(GIVE|LEND|BORROW)\\b"
+        }
+      ]
+    },
+
+    "interface_types": {
+      "patterns": [
+        {
+          "name": "support.type.interface.ferrum",
+          "match": "(?i)\\b(ANALOG_INPUT|INPUT|OUTPUT|PWM|DISPLAY|PULSE)\\b"
+        }
+      ]
+    },
+
+    "qualifiers": {
+      "patterns": [
+        {
+          "name": "support.type.qualifier.ferrum",
+          "match": "(?i)\\b(BRIGHTNESS|SPEED|ANGLE|RED|GREEN|BLUE|LCD|OLED|TRIGGER|ECHO|ENABLE)\\b"
+        }
+      ]
+    },
+
+    "type_names": {
+      "patterns": [
+        {
+          "name": "storage.type.ferrum",
+          "match": "(?i)\\b(Integer|Decimal|Percentage|Boolean|String|Byte)\\b"
+        }
+      ]
+    },
+
+    "builtin_functions": {
+      "patterns": [
+        {
+          "name": "support.function.builtin.ferrum",
+          "match": "(?i)\\b(abs|min|max|clamp|map|to_integer|to_decimal|to_percentage|to_string|length|includes|add|remove)\\b"
+        }
+      ]
+    },
+
+    "boolean_literals": {
+      "patterns": [
+        {
+          "name": "constant.language.boolean.ferrum",
+          "match": "(?i)\\b(TRUE|FALSE)\\b"
+        }
+      ]
+    },
+
+    "pin_state_literals": {
+      "patterns": [
+        {
+          "name": "constant.language.pinstate.ferrum",
+          "match": "(?i)\\b(HIGH|LOW)\\b"
+        }
+      ]
+    },
+
+    "operators": {
+      "patterns": [
+        {
+          "name": "keyword.operator.logical.ferrum",
+          "match": "(?i)\\b(AND|OR|NOT|IS NOT|IS)\\b"
+        },
+        {
+          "name": "keyword.operator.comparison.ferrum",
+          "match": "(>=|<=|==|!=|>|<)"
+        },
+        {
+          "name": "keyword.operator.assignment.ferrum",
+          "match": "(?<![=!<>])=(?!=)"
+        },
+        {
+          "name": "keyword.operator.arithmetic.ferrum",
+          "match": "[+\\-*/]"
+        }
+      ]
+    },
+
+    "function_definition": {
+      "comment": "Highlight function name after FUNCTION keyword",
+      "match": "(?i)\\b(FUNCTION)\\s+([A-Za-z_][A-Za-z0-9_]*)\\b",
+      "captures": {
+        "1": { "name": "keyword.other.section.ferrum" },
+        "2": { "name": "entity.name.function.ferrum" }
+      }
+    },
+
+    "device_definition": {
+      "comment": "Highlight device type name after DEFINE",
+      "match": "(?i)\\b(DEFINE)\\s+([A-Za-z_][A-Za-z0-9_]*)\\b",
+      "captures": {
+        "1": { "name": "keyword.other.section.ferrum" },
+        "2": { "name": "entity.name.type.ferrum" }
+      }
+    },
+
+    "identifier": {
+      "name": "variable.other.ferrum",
+      "match": "\\b[A-Za-z_][A-Za-z0-9_]*\\b"
+    }
+  }
+}
+// ╚══ END FILE ══╝
+
+
+// ╔══ FILE: ferrum-vscode/language-configuration.json ══╗
+{
+  "comments": {
+    "lineComment": "--"
+  },
+  "brackets": [
+    ["{", "}"],
+    ["[", "]"],
+    ["(", ")"]
+  ],
+  "autoClosingPairs": [
+    { "open": "{",  "close": "}" },
+    { "open": "[",  "close": "]" },
+    { "open": "(",  "close": ")" },
+    { "open": "\"", "close": "\"", "notIn": ["string", "comment"] }
+  ],
+  "surroundingPairs": [
+    ["{",  "}"],
+    ["[",  "]"],
+    ["(",  ")"],
+    ["\"", "\""]
+  ],
+  "onEnterRules": [
+    {
+      "beforeText": "\\{\\s*$",
+      "action": {
+        "indent": "indent"
+      }
+    }
+  ],
+  "wordPattern": "[A-Za-z_][A-Za-z0-9_]*",
+  "indentationRules": {
+    "increaseIndentPattern": "\\{\\s*$",
+    "decreaseIndentPattern": "^\\s*\\}"
+  }
+}
+// ╚══ END FILE ══╝
+
+
+// ╔══ FILE: ferrum-vscode/themes/ferrum-dark.json ══╗
+//
+// Ferrum Dark — a theme tuned for embedded/hardware code.
+// Iron and amber palette: dark background, warm keyword colours,
+// distinct colours for hardware concepts vs data flow concepts.
+{
+  "name": "Ferrum Dark",
+  "type": "dark",
+  "colors": {
+    "editor.background":              "#1a1a1e",
+    "editor.foreground":              "#d4cfc8",
+    "editor.lineHighlightBackground": "#252530",
+    "editor.selectionBackground":     "#3a3a50",
+    "editorCursor.foreground":        "#e8a050",
+    "editorLineNumber.foreground":    "#4a4a5a",
+    "editorLineNumber.activeForeground": "#888890"
+  },
+  "tokenColors": [
+    {
+      "name": "Comments",
+      "scope": "comment",
+      "settings": { "foreground": "#5a6a5a", "fontStyle": "italic" }
+    },
+    {
+      "name": "Strings",
+      "scope": "string",
+      "settings": { "foreground": "#a8c878" }
+    },
+    {
+      "name": "Escape sequences",
+      "scope": "constant.character.escape",
+      "settings": { "foreground": "#c8e898" }
+    },
+    {
+      "name": "Numbers",
+      "scope": "constant.numeric",
+      "settings": { "foreground": "#d4a860" }
+    },
+    {
+      "name": "Clock and duration literals",
+      "scope": [
+        "constant.numeric.clock.ferrum",
+        "constant.numeric.duration.ferrum"
+      ],
+      "settings": { "foreground": "#e8b870", "fontStyle": "bold" }
+    },
+    {
+      "name": "Boolean and pin-state literals",
+      "scope": [
+        "constant.language.boolean.ferrum",
+        "constant.language.pinstate.ferrum"
+      ],
+      "settings": { "foreground": "#e8c860", "fontStyle": "bold" }
+    },
+    {
+      "name": "Section keywords (CONFIG DEFINE CREATE DECLARE FUNCTION RUN)",
+      "scope": "keyword.other.section.ferrum",
+      "settings": { "foreground": "#e87840", "fontStyle": "bold" }
+    },
+    {
+      "name": "Control flow (IF ELSE LOOP FOR EVERY RETURN CALL etc.)",
+      "scope": "keyword.control.ferrum",
+      "settings": { "foreground": "#c86880" }
+    },
+    {
+      "name": "Hardware commands (TURN SET READ DELAY PRINT etc.)",
+      "scope": "keyword.other.command.ferrum",
+      "settings": { "foreground": "#78b8d8" }
+    },
+    {
+      "name": "Ownership keywords (GIVE LEND BORROW)",
+      "scope": "storage.modifier.ownership.ferrum",
+      "settings": { "foreground": "#d878c8", "fontStyle": "bold italic" }
+    },
+    {
+      "name": "Interface types (INPUT OUTPUT PWM etc.)",
+      "scope": "support.type.interface.ferrum",
+      "settings": { "foreground": "#70c8a8" }
+    },
+    {
+      "name": "Qualifiers (BRIGHTNESS SPEED ANGLE etc.)",
+      "scope": "support.type.qualifier.ferrum",
+      "settings": { "foreground": "#60b898" }
+    },
+    {
+      "name": "Data type names (Integer Decimal Boolean etc.)",
+      "scope": "storage.type.ferrum",
+      "settings": { "foreground": "#88b8e8" }
+    },
+    {
+      "name": "Built-in functions (abs clamp map etc.)",
+      "scope": "support.function.builtin.ferrum",
+      "settings": { "foreground": "#c8a8e8" }
+    },
+    {
+      "name": "Logical operators (AND OR NOT IS)",
+      "scope": "keyword.operator.logical.ferrum",
+      "settings": { "foreground": "#c86880" }
+    },
+    {
+      "name": "Comparison and arithmetic operators",
+      "scope": [
+        "keyword.operator.comparison.ferrum",
+        "keyword.operator.arithmetic.ferrum",
+        "keyword.operator.assignment.ferrum"
+      ],
+      "settings": { "foreground": "#d0c8b0" }
+    },
+    {
+      "name": "Function names",
+      "scope": "entity.name.function.ferrum",
+      "settings": { "foreground": "#f0d080", "fontStyle": "bold" }
+    },
+    {
+      "name": "Device type names",
+      "scope": "entity.name.type.ferrum",
+      "settings": { "foreground": "#80d8c0", "fontStyle": "bold" }
+    },
+    {
+      "name": "Identifiers",
+      "scope": "variable.other.ferrum",
+      "settings": { "foreground": "#d4cfc8" }
+    }
+  ]
+}
+// ╚══ END FILE ══╝
+
+
+// ╔══ FILE: ferrum-vscode/snippets/ferrum.json ══╗
+{
+  "Minimal program skeleton": {
+    "prefix": "ferrum",
+    "body": [
+      "CONFIG {",
+      "    TARGET = \"${1|microbit_v2,rp2040|}\"",
+      "    DEBUG  = TRUE",
+      "}",
+      "",
+      "DEFINE ${2:Led} AS OUTPUT",
+      "",
+      "CREATE ${2:Led} ${3:led} ON PIN ${4:13}",
+      "",
+      "RUN {",
+      "    LOOP {",
+      "        $0",
+      "    }",
+      "}"
+    ],
+    "description": "Minimal Ferrum program with CONFIG, DEFINE, CREATE, RUN"
+  },
+
+  "CONFIG block": {
+    "prefix": "config",
+    "body": [
+      "CONFIG {",
+      "    TARGET      = \"${1|microbit_v2,rp2040|}\"",
+      "    DEBUG       = ${2|TRUE,FALSE|}",
+      "    DEBOUNCE_MS = ${3:50}",
+      "}"
+    ],
+    "description": "CONFIG section"
+  },
+
+  "DEFINE simple device": {
+    "prefix": "define",
+    "body": [
+      "DEFINE ${1:DeviceName} AS ${2|INPUT,OUTPUT,ANALOG_INPUT,PWM,DISPLAY,PULSE|}"
+    ],
+    "description": "DEFINE a simple device type"
+  },
+
+  "DEFINE composite device": {
+    "prefix": "definec",
+    "body": [
+      "DEFINE ${1:DeviceName} AS {",
+      "    ${2:OUTPUT},",
+      "    ${3:PWM BRIGHTNESS}",
+      "}"
+    ],
+    "description": "DEFINE a composite device type"
+  },
+
+  "CREATE single pin": {
+    "prefix": "create",
+    "body": [
+      "CREATE ${1:DeviceType} ${2:instance} ON PIN ${3:13}"
+    ],
+    "description": "CREATE a device on a single pin"
+  },
+
+  "CREATE composite with INIT": {
+    "prefix": "createc",
+    "body": [
+      "CREATE ${1:DeviceType} ${2:instance} ON {",
+      "    ${3:output}: PIN ${4:3},",
+      "    ${5:brightness}: PIN ${6:4}",
+      "} INIT {",
+      "    ${3:output}: ${7|LOW,HIGH|},",
+      "    ${5:brightness}: ${8:0.0}",
+      "}"
+    ],
+    "description": "CREATE a composite device with named pins and INIT"
+  },
+
+  "DECLARE variable": {
+    "prefix": "decl",
+    "body": [
+      "DECLARE ${1|Integer,Decimal,Percentage,Boolean,String,Byte|} ${2:name} INIT ${3:0}"
+    ],
+    "description": "DECLARE a variable"
+  },
+
+  "DECLARE constant": {
+    "prefix": "const",
+    "body": [
+      "DECLARE CONSTANT ${1|Integer,Decimal,Percentage,Boolean,String,Byte|} ${2:NAME} = ${3:0}"
+    ],
+    "description": "DECLARE a constant"
+  },
+
+  "FUNCTION with data params": {
+    "prefix": "fn",
+    "body": [
+      "FUNCTION ${1:name} ${2:Integer}: ${3:param} {",
+      "    $0",
+      "}"
+    ],
+    "description": "FUNCTION definition with data parameters"
+  },
+
+  "FUNCTION with device BORROW": {
+    "prefix": "fnborrow",
+    "body": [
+      "FUNCTION ${1:name} BORROW ${2:DeviceType}: ${3:device} {",
+      "    $0",
+      "}"
+    ],
+    "description": "FUNCTION definition that BORROWs a device"
+  },
+
+  "FUNCTION with device GIVE": {
+    "prefix": "fngive",
+    "body": [
+      "FUNCTION ${1:name} GIVE ${2:DeviceType}: ${3:device} {",
+      "    $0",
+      "}"
+    ],
+    "description": "FUNCTION definition that takes GIVE ownership"
+  },
+
+  "FUNCTION with RETURN": {
+    "prefix": "fnret",
+    "body": [
+      "FUNCTION ${1:name} ${2:Integer}: ${3:param} {",
+      "    $0",
+      "    RETURN ${4:value}",
+      "}"
+    ],
+    "description": "FUNCTION definition with RETURN"
+  },
+
+  "RUN LOOP": {
+    "prefix": "run",
+    "body": [
+      "RUN {",
+      "    LOOP {",
+      "        $0",
+      "    }",
+      "}"
+    ],
+    "description": "RUN section with LOOP"
+  },
+
+  "EVERY block": {
+    "prefix": "every",
+    "body": [
+      "EVERY ${1:1000}ms {",
+      "    $0",
+      "}"
+    ],
+    "description": "EVERY scheduled block"
+  },
+
+  "IF block": {
+    "prefix": "if",
+    "body": [
+      "IF ${1:condition} {",
+      "    $0",
+      "}"
+    ],
+    "description": "IF statement"
+  },
+
+  "IF ELSE block": {
+    "prefix": "ifelse",
+    "body": [
+      "IF ${1:condition} {",
+      "    $0",
+      "} ELSE {",
+      "    $2",
+      "}"
+    ],
+    "description": "IF/ELSE statement"
+  },
+
+  "FOR RANGE loop": {
+    "prefix": "for",
+    "body": [
+      "FOR ${1:i} IN RANGE ${2:0}, ${3:9} {",
+      "    $0",
+      "}"
+    ],
+    "description": "FOR loop over a range"
+  },
+
+  "FOR array loop": {
+    "prefix": "fora",
+    "body": [
+      "FOR ${1:item} IN ${2:array} {",
+      "    $0",
+      "}"
+    ],
+    "description": "FOR loop over an array"
+  },
+
+  "TURN HIGH": {
+    "prefix": "high",
+    "body": ["TURN ${1:device} HIGH"],
+    "description": "TURN device HIGH"
+  },
+
+  "TURN LOW": {
+    "prefix": "low",
+    "body": ["TURN ${1:device} LOW"],
+    "description": "TURN device LOW"
+  },
+
+  "SET with qualifier": {
+    "prefix": "set",
+    "body": [
+      "SET ${1:device} ${2|BRIGHTNESS,SPEED,ANGLE,RED,GREEN,BLUE|} ${3:0.5}"
+    ],
+    "description": "SET device PWM qualifier"
+  },
+
+  "READ_PERCENT": {
+    "prefix": "read",
+    "body": ["READ_PERCENT ${1:sensor}"],
+    "description": "Read analog sensor as percentage"
+  },
+
+  "DELAY ms": {
+    "prefix": "delay",
+    "body": ["DELAY ${1:500}ms"],
+    "description": "DELAY in milliseconds"
+  },
+
+  "CALL function": {
+    "prefix": "call",
+    "body": ["CALL ${1:function} ${2:args}"],
+    "description": "CALL a function"
+  },
+
+  "DECLARE inline from CALL": {
+    "prefix": "let",
+    "body": [
+      "DECLARE ${1|Integer,Decimal,Percentage,Boolean,String,Byte|} ${2:result} = CALL ${3:function} ${4:args}"
+    ],
+    "description": "Capture return value from CALL"
+  },
+
+  "Inline IF expression": {
+    "prefix": "ifexpr",
+    "body": [
+      "IF ${1:condition} { ${2:value_a} } ELSE { ${3:value_b} }"
+    ],
+    "description": "Inline IF expression"
+  },
+
+  "BORROW call": {
+    "prefix": "borrow",
+    "body": ["CALL ${1:function} BORROW ${2:device}"],
+    "description": "CALL with BORROW ownership"
+  },
+
+  "GIVE call": {
+    "prefix": "give",
+    "body": ["CALL ${1:function} GIVE ${2:device}"],
+    "description": "CALL with GIVE ownership"
+  }
+}
+// ╚══ END FILE ══╝
+
+
+// ╔══ FILE: ferrum-vscode/src/extension.ts ══╗
+import * as vscode from 'vscode';
+import * as path   from 'path';
+import { startLspClient, stopLspClient } from './ferrumLsp';
+
+export function activate(context: vscode.ExtensionContext) {
+    console.log('Ferrum extension activated');
+
+    // ── Register commands ─────────────────────────────────────────
+
+    context.subscriptions.push(
+        vscode.commands.registerCommand('ferrum.compile', () => {
+            runFerrum('compile', context);
+        }),
+        vscode.commands.registerCommand('ferrum.check', () => {
+            runFerrum('check', context);
+        }),
+        vscode.commands.registerCommand('ferrum.showTokens', () => {
+            runFerrum('tokens', context);
+        }),
+        vscode.commands.registerCommand('ferrum.showAst', () => {
+            runFerrum('ast', context);
+        }),
+    );
+
+    // ── Auto-check on save ────────────────────────────────────────
+
+    context.subscriptions.push(
+        vscode.workspace.onDidSaveTextDocument((doc) => {
+            const config = vscode.workspace.getConfiguration('ferrum');
+            if (doc.languageId === 'ferrum' && config.get<boolean>('autoCheckOnSave', true)) {
+                runFerrum('check', context, doc.fileName);
+            }
+        })
+    );
+
+    // ── Start LSP client ──────────────────────────────────────────
+
+    const config = vscode.workspace.getConfiguration('ferrum');
+    if (config.get<boolean>('enableLsp', true)) {
+        startLspClient(context);
+    }
+}
+
+export function deactivate() {
+    stopLspClient();
+}
+
+// ── Run ferrum CLI command ────────────────────────────────────────
+
+function runFerrum(
+    subcommand: 'compile' | 'check' | 'tokens' | 'ast',
+    context:    vscode.ExtensionContext,
+    filePath?:  string,
+) {
+    const editor = vscode.window.activeTextEditor;
+    const target = filePath ?? editor?.document.fileName;
+
+    if (!target || !target.endsWith('.fe')) {
+        vscode.window.showWarningMessage(
+            'Ferrum: Open a .fe file first.'
+        );
+        return;
+    }
+
+    const config       = vscode.workspace.getConfiguration('ferrum');
+    const compilerPath = config.get<string>('compilerPath', 'ferrum');
+
+    // Use VS Code's built-in task runner for compile (shows output panel)
+    const task = new vscode.Task(
+        { type: 'ferrum', task: subcommand },
+        vscode.TaskScope.Workspace,
+        `ferrum ${subcommand}`,
+        'ferrum',
+        new vscode.ShellExecution(`${compilerPath} ${subcommand} "${target}"`),
+        '$ferrum'   // problem matcher name from package.json
+    );
+
+    task.presentationOptions = {
+        reveal:     vscode.TaskRevealKind.Always,
+        panel:      vscode.TaskPanelKind.Dedicated,
+        showReuseMessage: false,
+        clear:      true,
+    };
+
+    vscode.tasks.executeTask(task);
+}
+// ╚══ END FILE ══╝
+
+
+// ╔══ FILE: ferrum-vscode/src/ferrumLsp.ts ══╗
+//
+// LSP client wiring.
+//
+// The Ferrum compiler exposes a language server mode via:
+//   ferrum lsp --stdio
+//
+// This file wires the vscode-languageclient to that process.
+// The LSP server provides:
+//   - textDocument/publishDiagnostics (errors + warnings)
+//   - textDocument/hover              (type at cursor)
+//   - textDocument/completion         (keyword + identifier completion)
+//
+// The server side (ferrum lsp) is a future addition to the compiler.
+// This client is ready to connect when the server is implemented.
+// Until then, the problem matcher in package.json handles diagnostics
+// from the CLI output of `ferrum check`.
+
+import * as vscode from 'vscode';
+import * as path   from 'path';
+import {
+    LanguageClient,
+    LanguageClientOptions,
+    ServerOptions,
+    TransportKind,
+} from 'vscode-languageclient/node';
+
+let client: LanguageClient | undefined;
+
+export function startLspClient(context: vscode.ExtensionContext) {
+    const config       = vscode.workspace.getConfiguration('ferrum');
+    const compilerPath = config.get<string>('compilerPath', 'ferrum');
+
+    const serverOptions: ServerOptions = {
+        command:    compilerPath,
+        args:       ['lsp', '--stdio'],
+        transport:  TransportKind.stdio,
+        options: {
+            // Inherit environment so the compiler can find stdlib
+            env: { ...process.env },
+        },
+    };
+
+    const clientOptions: LanguageClientOptions = {
+        documentSelector: [{ scheme: 'file', language: 'ferrum' }],
+        synchronize: {
+            fileEvents: vscode.workspace.createFileSystemWatcher('**/*.fe'),
+        },
+        outputChannelName: 'Ferrum Language Server',
+        // Map LSP severity to VS Code diagnostic severity
+        diagnosticCollectionName: 'ferrum',
+    };
+
+    client = new LanguageClient(
+        'ferrum-lsp',
+        'Ferrum Language Server',
+        serverOptions,
+        clientOptions,
+    );
+
+    // Start but don't fail the extension if the server isn't present yet
+    client.start().catch((err) => {
+        console.warn(
+            'Ferrum LSP server not found — falling back to problem matcher diagnostics.',
+            err.message,
+        );
+    });
+}
+
+export async function stopLspClient() {
+    if (client) {
+        await client.stop();
+        client = undefined;
+    }
+}
+// ╚══ END FILE ══╝
+
+
+// ╔══ FILE: ferrum-vscode/.vscode/launch.json ══╗
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Run Ferrum Extension",
+      "type": "extensionHost",
+      "request": "launch",
+      "args": [
+        "--extensionDevelopmentPath=${workspaceFolder}"
+      ],
+      "outFiles": ["${workspaceFolder}/out/**/*.js"],
+      "preLaunchTask": "${defaultBuildTask}"
+    }
+  ]
+}
+// ╚══ END FILE ══╝
+
+
+// ╔══ FILE: ferrum-vscode/tsconfig.json ══╗
+{
+  "compilerOptions": {
+    "module":           "Node16",
+    "target":           "ES2020",
+    "outDir":           "./out",
+    "lib":              ["ES2020"],
+    "sourceMap":        true,
+    "rootDir":          "./src",
+    "strict":           true,
+    "moduleResolution": "node16"
+  },
+  "exclude": ["node_modules", ".vscode-test"]
+}
+// ╚══ END FILE ══╝
+
+
+// ╔══ FILE: ferrum-vscode/README.md ══╗
+/*
+# Ferrum Language Extension for VS Code
+
+Full language support for Ferrum `.fe` source files.
+
+## Features
+
+- **Syntax highlighting** — all keywords, types, ownership modifiers,
+  hardware commands, and built-in functions coloured distinctly
+- **Ferrum Dark theme** — warm iron/amber palette designed for
+  hardware code
+- **Code snippets** — type `ferrum`, `define`, `create`, `fn`, `every`,
+  etc. for full template expansions
+- **Auto-check on save** — runs `ferrum check` on every save and
+  shows errors/warnings inline via the problem matcher
+- **One-click compile** — click the ▶ button in the editor title bar
+  to compile the current `.fe` file
+- **LSP ready** — connects to `ferrum lsp --stdio` when available
+  for hover types and completion
+
+## Requirements
+
+Install the Ferrum compiler and ensure it is on your PATH:
+
+```bash
+cargo install --path ferrum/compiler
+ferrum --version
+```
+
+## Extension settings
+
+| Setting | Default | Description |
+|---|---|---|
+| `ferrum.compilerPath` | `"ferrum"` | Path to the compiler binary |
+| `ferrum.enableLsp` | `true` | Enable language server |
+| `ferrum.autoCheckOnSave` | `true` | Run check on save |
+
+## Keyboard shortcuts
+
+| Command | Shortcut |
+|---|---|
+| Ferrum: Compile | Click ▶ in editor title |
+| Ferrum: Check | Via Command Palette |
+
+## Monaco Editor
+
+This extension's grammar and theme are designed to be reused in
+Monaco Editor (e.g. inside a Tauri+Vue IDE). See `monaco/` directory.
+*/
+// ╚══ END FILE ══╝
+
+
+// ================================================================
+// MONACO EDITOR INTEGRATION
+// ================================================================
+
+
+// ╔══ FILE: ferrum-vscode/monaco/ferrumLanguage.ts ══╗
+//
+// Register the Ferrum language in Monaco Editor.
+//
+// USAGE in Tauri+Vue:
+//   import { registerFerrumLanguage } from './monaco/ferrumLanguage';
+//   registerFerrumLanguage(monaco);
+//
+// The TextMate grammar is used via monaco-editor-textmate if you
+// want full parity with VS Code highlighting.
+// Alternatively, the Monarch grammar below provides good highlighting
+// without the textmate adapter dependency — useful for lighter builds.
+
+import type * as Monaco from 'monaco-editor';
+
+export function registerFerrumLanguage(monaco: typeof Monaco): void {
+    // ── Register language ID ──────────────────────────────────────
+    monaco.languages.register({
+        id:         'ferrum',
+        extensions: ['.fe'],
+        aliases:    ['Ferrum', 'ferrum'],
+        mimetypes:  ['text/x-ferrum'],
+    });
+
+    // ── Monarch tokeniser (TextMate-free alternative) ─────────────
+    // Produces the same token names as the TextMate grammar so the
+    // same theme rules apply in both VS Code and Monaco.
+    monaco.languages.setMonarchTokensProvider('ferrum', {
+        // Ferrum is case-insensitive — we match lowercase and let
+        // the Monarch `ignoreCase` flag handle the rest.
+        ignoreCase: true,
+
+        keywords_section: [
+            'config', 'define', 'create', 'declare', 'function', 'run'
+        ],
+        keywords_control: [
+            'if', 'else', 'loop', 'for', 'in', 'range', 'every',
+            'break', 'continue', 'return', 'call'
+        ],
+        keywords_command: [
+            'turn', 'set', 'toggle', 'read_percent', 'read',
+            'delay', 'print', 'on', 'pin', 'pull', 'up', 'down',
+            'init', 'as', 'constant'
+        ],
+        keywords_ownership: ['give', 'lend', 'borrow'],
+        keywords_interface: [
+            'analog_input', 'input', 'output', 'pwm', 'display', 'pulse'
+        ],
+        keywords_qualifier: [
+            'brightness', 'speed', 'angle', 'red', 'green', 'blue',
+            'lcd', 'oled', 'trigger', 'echo', 'enable'
+        ],
+        keywords_type: [
+            'integer', 'decimal', 'percentage', 'boolean', 'string', 'byte'
+        ],
+        keywords_builtin: [
+            'abs', 'min', 'max', 'clamp', 'map',
+            'to_integer', 'to_decimal', 'to_percentage', 'to_string',
+            'length', 'includes', 'add', 'remove'
+        ],
+        keywords_literal: ['true', 'false', 'high', 'low'],
+        keywords_operator: ['and', 'or', 'not', 'is'],
+
+        tokenizer: {
+            root: [
+                // Comments
+                [/--.*$/, 'comment'],
+
+                // Strings
+                [/"/, { token: 'string.quote', next: '@string' }],
+
+                // Numbers: hex, float, clock, duration, integer
+                [/0[xX][0-9a-fA-F]+/, 'number.hex'],
+                [/\d+\.\d+/, 'number.float'],
+                [/\d+[Mm][Hh][Zz]/, 'number.clock'],
+                [/\d+(ms|s)\b/, 'number.duration'],
+                [/\d+/, 'number'],
+
+                // Identifiers and keywords
+                [/[A-Za-z_][A-Za-z0-9_]*/, {
+                    cases: {
+                        '@keywords_section':   'keyword.section',
+                        '@keywords_control':   'keyword.control',
+                        '@keywords_command':   'keyword.command',
+                        '@keywords_ownership': 'keyword.ownership',
+                        '@keywords_interface': 'type.interface',
+                        '@keywords_qualifier': 'type.qualifier',
+                        '@keywords_type':      'keyword.type',
+                        '@keywords_builtin':   'support.function',
+                        '@keywords_literal':   'constant.language',
+                        '@keywords_operator':  'keyword.operator',
+                        '@default':            'identifier',
+                    }
+                }],
+
+                // Operators
+                [/[><!]=?|==|!=/, 'operator'],
+                [/[+\-*/]/, 'operator'],
+                [/(?<![=!<>])=(?!=)/, 'operator.assignment'],
+
+                // Punctuation
+                [/[{}[\]()]/, 'delimiter'],
+                [/[,:]/, 'delimiter'],
+            ],
+
+            string: [
+                [/[^"\\]+/, 'string'],
+                [/\\["\\\n]/, 'string.escape'],
+                [/"/, { token: 'string.quote', next: '@pop' }],
+            ],
+        },
+    } as Monaco.languages.IMonarchLanguage);
+
+    // ── Language configuration ────────────────────────────────────
+    monaco.languages.setLanguageConfiguration('ferrum', {
+        comments:           { lineComment: '--' },
+        brackets:           [['{','}'], ['[',']'], ['(',')']],
+        autoClosingPairs:   [
+            { open: '{',  close: '}' },
+            { open: '[',  close: ']' },
+            { open: '(',  close: ')' },
+            { open: '"',  close: '"', notIn: ['string', 'comment'] },
+        ],
+        surroundingPairs:   [
+            { open: '{', close: '}' },
+            { open: '[', close: ']' },
+            { open: '(', close: ')' },
+            { open: '"', close: '"' },
+        ],
+        indentationRules: {
+            increaseIndentPattern: /\{\s*$/,
+            decreaseIndentPattern: /^\s*\}/,
+        },
+        wordPattern: /[A-Za-z_][A-Za-z0-9_]*/,
+    });
+}
+// ╚══ END FILE ══╝
+
+
+// ╔══ FILE: ferrum-vscode/monaco/ferrumTheme.ts ══╗
+//
+// Ferrum Dark theme for Monaco Editor.
+// Token names match the Monarch tokeniser in ferrumLanguage.ts.
+// Colours are identical to the VS Code theme in ferrum-dark.json.
+
+import type * as Monaco from 'monaco-editor';
+
+export function registerFerrumTheme(monaco: typeof Monaco): void {
+    monaco.editor.defineTheme('ferrum-dark', {
+        base:    'vs-dark',
+        inherit: true,
+        rules: [
+            { token: 'comment',            foreground: '5a6a5a', fontStyle: 'italic' },
+            { token: 'string',             foreground: 'a8c878' },
+            { token: 'string.escape',      foreground: 'c8e898' },
+            { token: 'number',             foreground: 'd4a860' },
+            { token: 'number.clock',       foreground: 'e8b870', fontStyle: 'bold' },
+            { token: 'number.duration',    foreground: 'e8b870', fontStyle: 'bold' },
+            { token: 'number.float',       foreground: 'd4a860' },
+            { token: 'number.hex',         foreground: 'd4a860' },
+            { token: 'constant.language',  foreground: 'e8c860', fontStyle: 'bold' },
+            { token: 'keyword.section',    foreground: 'e87840', fontStyle: 'bold' },
+            { token: 'keyword.control',    foreground: 'c86880' },
+            { token: 'keyword.command',    foreground: '78b8d8' },
+            { token: 'keyword.ownership',  foreground: 'd878c8', fontStyle: 'bold italic' },
+            { token: 'type.interface',     foreground: '70c8a8' },
+            { token: 'type.qualifier',     foreground: '60b898' },
+            { token: 'keyword.type',       foreground: '88b8e8' },
+            { token: 'support.function',   foreground: 'c8a8e8' },
+            { token: 'keyword.operator',   foreground: 'c86880' },
+            { token: 'operator',           foreground: 'd0c8b0' },
+            { token: 'operator.assignment',foreground: 'd0c8b0' },
+            { token: 'identifier',         foreground: 'd4cfc8' },
+            { token: 'delimiter',          foreground: 'a8a8b8' },
+        ],
+        colors: {
+            'editor.background':              '#1a1a1e',
+            'editor.foreground':              '#d4cfc8',
+            'editor.lineHighlightBackground': '#252530',
+            'editor.selectionBackground':     '#3a3a50',
+            'editorCursor.foreground':        '#e8a050',
+            'editorLineNumber.foreground':    '#4a4a5a',
+        },
+    });
+}
+// ╚══ END FILE ══╝
+
+
+// ╔══ FILE: ferrum-vscode/monaco/ferrumCompletion.ts ══╗
+//
+// Completion item provider for Monaco Editor.
+// Provides the same completions as the VS Code snippets.
+// Returns keyword completions, snippet templates, and
+// (when a symbol table is available) identifier completions.
+
+import type * as Monaco from 'monaco-editor';
+
+export function registerFerrumCompletion(monaco: typeof Monaco): void {
+    monaco.languages.registerCompletionItemProvider('ferrum', {
+        provideCompletionItems(model, position) {
+            const range = {
+                startLineNumber: position.lineNumber,
+                endLineNumber:   position.lineNumber,
+                startColumn:     model.getWordUntilPosition(position).startColumn,
+                endColumn:       position.column,
+            };
+
+            const kw = (label: string): Monaco.languages.CompletionItem => ({
+                label,
+                kind:             monaco.languages.CompletionItemKind.Keyword,
+                insertText:       label,
+                range,
+            });
+
+            const snip = (
+                label:       string,
+                insertText:  string,
+                detail:      string,
+            ): Monaco.languages.CompletionItem => ({
+                label,
+                kind:             monaco.languages.CompletionItemKind.Snippet,
+                insertText,
+                insertTextRules:  monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+                detail,
+                range,
+            });
+
+            const builtin = (label: string): Monaco.languages.CompletionItem => ({
+                label,
+                kind:         monaco.languages.CompletionItemKind.Function,
+                insertText:   label,
+                detail:       'built-in function',
+                range,
+            });
+
+            return {
+                suggestions: [
+                    // ── Section keywords ──────────────────────────
+                    kw('CONFIG'), kw('DEFINE'), kw('CREATE'),
+                    kw('DECLARE'), kw('FUNCTION'), kw('RUN'),
+
+                    // ── Control flow ──────────────────────────────
+                    kw('IF'), kw('ELSE'), kw('LOOP'), kw('FOR'),
+                    kw('IN'), kw('RANGE'), kw('EVERY'), kw('BREAK'),
+                    kw('CONTINUE'), kw('RETURN'), kw('CALL'),
+
+                    // ── Hardware commands ─────────────────────────
+                    kw('TURN'), kw('SET'), kw('TOGGLE'),
+                    kw('READ'), kw('READ_PERCENT'),
+                    kw('DELAY'), kw('PRINT'),
+                    kw('ON'), kw('PIN'), kw('PULL'), kw('INIT'),
+
+                    // ── Ownership ─────────────────────────────────
+                    kw('GIVE'), kw('LEND'), kw('BORROW'),
+
+                    // ── Types ─────────────────────────────────────
+                    kw('Integer'), kw('Decimal'), kw('Percentage'),
+                    kw('Boolean'), kw('String'), kw('Byte'),
+
+                    // ── Interface types ───────────────────────────
+                    kw('INPUT'), kw('OUTPUT'), kw('ANALOG_INPUT'),
+                    kw('PWM'), kw('DISPLAY'), kw('PULSE'),
+
+                    // ── Qualifiers ────────────────────────────────
+                    kw('BRIGHTNESS'), kw('SPEED'), kw('ANGLE'),
+                    kw('RED'), kw('GREEN'), kw('BLUE'),
+                    kw('LCD'), kw('OLED'), kw('TRIGGER'), kw('ECHO'),
+                    kw('ENABLE'), kw('HIGH'), kw('LOW'),
+
+                    // ── Operators ─────────────────────────────────
+                    kw('AND'), kw('OR'), kw('NOT'),
+                    kw('IS'), kw('IS NOT'),
+                    kw('TRUE'), kw('FALSE'),
+
+                    // ── Built-in functions ────────────────────────
+                    builtin('abs'),   builtin('min'),   builtin('max'),
+                    builtin('clamp'), builtin('map'),
+                    builtin('to_integer'), builtin('to_decimal'),
+                    builtin('to_percentage'), builtin('to_string'),
+                    builtin('length'), builtin('includes'),
+                    builtin('add'),   builtin('remove'),
+
+                    // ── Snippets ──────────────────────────────────
+                    snip(
+                        'ferrum — full skeleton',
+                        [
+                            'CONFIG {',
+                            '    TARGET = "${1|microbit_v2,rp2040|}"',
+                            '    DEBUG  = TRUE',
+                            '}',
+                            '',
+                            'DEFINE ${2:Led} AS OUTPUT',
+                            '',
+                            'CREATE ${2:Led} ${3:led} ON PIN ${4:13}',
+                            '',
+                            'RUN {',
+                            '    LOOP {',
+                            '        $0',
+                            '    }',
+                            '}',
+                        ].join('\n'),
+                        'Minimal Ferrum program skeleton',
+                    ),
+                    snip(
+                        'fn — function',
+                        'FUNCTION ${1:name} ${2:Integer}: ${3:param} {\n    $0\n}',
+                        'FUNCTION definition',
+                    ),
+                    snip(
+                        'every — scheduled block',
+                        'EVERY ${1:1000}ms {\n    $0\n}',
+                        'EVERY scheduled block',
+                    ),
+                    snip(
+                        'if — conditional',
+                        'IF ${1:condition} {\n    $0\n}',
+                        'IF statement',
+                    ),
+                    snip(
+                        'for — range loop',
+                        'FOR ${1:i} IN RANGE ${2:0}, ${3:9} {\n    $0\n}',
+                        'FOR loop over a range',
+                    ),
+                    snip(
+                        'decl — variable',
+                        'DECLARE ${1|Integer,Decimal,Percentage,Boolean,String,Byte|} ${2:name} INIT ${3:0}',
+                        'DECLARE a variable',
+                    ),
+                ],
+            };
+        },
+    });
+}
+// ╚══ END FILE ══╝
+
+
+// ╔══ FILE: ferrum-vscode/monaco/ferrumDiagnostics.ts ══╗
+//
+// Diagnostic bridge for Monaco Editor.
+//
+// The Ferrum compiler outputs diagnostics in the format:
+//   [file:line:col] error[E007]: message
+//   Suggestion: fix text
+//
+// This module parses that output and sets Monaco editor markers
+// so errors appear as red squiggles inline.
+//
+// USAGE in Tauri+Vue:
+//   Call applyFerrumDiagnostics(monaco, model, compilerOutput)
+//   after receiving output from `ferrum check file.fe` via Tauri's
+//   Command API (invoke / shell plugin).
+
+import type * as Monaco from 'monaco-editor';
+
+export interface FerrumDiagnostic {
+    file:       string;
+    line:       number;
+    column:     number;
+    severity:   'error' | 'warning';
+    code:       string;
+    message:    string;
+    suggestion: string | null;
+}
+
+// ── Parse compiler output ─────────────────────────────────────────
+
+const DIAG_PATTERN =
+    /^\[([^:]+):(\d+):(\d+)\]\s+(error|warning)\[([A-Z]\d+)\]:\s+(.+)$/;
+const SUGGESTION_PATTERN = /^\s+Suggestion:\s+(.+)$/;
+
+export function parseFerrumOutput(output: string): FerrumDiagnostic[] {
+    const lines = output.split('\n');
+    const results: FerrumDiagnostic[] = [];
+    let current: FerrumDiagnostic | null = null;
+
+    for (const line of lines) {
+        const diagMatch = DIAG_PATTERN.exec(line);
+        if (diagMatch) {
+            current = {
+                file:       diagMatch[1],
+                line:       parseInt(diagMatch[2], 10),
+                column:     parseInt(diagMatch[3], 10),
+                severity:   diagMatch[4] as 'error' | 'warning',
+                code:       diagMatch[5],
+                message:    diagMatch[6],
+                suggestion: null,
+            };
+            results.push(current);
+            continue;
+        }
+
+        const suggMatch = SUGGESTION_PATTERN.exec(line);
+        if (suggMatch && current) {
+            current.suggestion = suggMatch[1];
+        }
+    }
+
+    return results;
+}
+
+// ── Apply diagnostics to Monaco model ────────────────────────────
+
+export function applyFerrumDiagnostics(
+    monaco:  typeof Monaco,
+    model:   Monaco.editor.ITextModel,
+    output:  string,
+): void {
+    const diagnostics = parseFerrumOutput(output);
+
+    const markers: Monaco.editor.IMarkerData[] = diagnostics.map(d => ({
+        severity: d.severity === 'error'
+            ? monaco.MarkerSeverity.Error
+            : monaco.MarkerSeverity.Warning,
+        startLineNumber: d.line,
+        startColumn:     d.column,
+        endLineNumber:   d.line,
+        endColumn:       d.column + 1,
+        message:         d.suggestion
+            ? `${d.message}\n💡 ${d.suggestion}`
+            : d.message,
+        code:            d.code,
+        source:          'ferrum',
+    }));
+
+    monaco.editor.setModelMarkers(model, 'ferrum', markers);
+}
+
+// ── Clear all markers ─────────────────────────────────────────────
+
+export function clearFerrumDiagnostics(
+    monaco: typeof Monaco,
+    model:  Monaco.editor.ITextModel,
+): void {
+    monaco.editor.setModelMarkers(model, 'ferrum', []);
+}
+
+// ── Tests (host-side, no Monaco dependency) ──────────────────────
+
+if (typeof describe !== 'undefined') {
+    describe('parseFerrumOutput', () => {
+        it('parses an error line', () => {
+            const output = '[test.fe:12:5] error[E007]: Type mismatch: expected Integer, found Decimal.\n  Suggestion: Use to_integer to convert.';
+            const diags  = parseFerrumOutput(output);
+            console.assert(diags.length === 1);
+            console.assert(diags[0].line === 12);
+            console.assert(diags[0].severity === 'error');
+            console.assert(diags[0].code === 'E007');
+            console.assert(diags[0].suggestion !== null);
+        });
+
+        it('parses a warning line', () => {
+            const output = '[test.fe:3:1] warning[W001]: \'count\' is declared but never used.';
+            const diags  = parseFerrumOutput(output);
+            console.assert(diags[0].severity === 'warning');
+            console.assert(diags[0].code === 'W001');
+        });
+
+        it('returns empty for clean output', () => {
+            const diags = parseFerrumOutput('✓ test.fe — no errors\n');
+            console.assert(diags.length === 0);
+        });
+    });
+}
+// ╚══ END FILE ══╝
+
+
+// ╔══ FILE: ferrum-vscode/monaco/index.ts ══╗
+//
+// Single import entry point for Monaco integration.
+//
+// In your Tauri+Vue component:
+//
+//   import * as monaco from 'monaco-editor';
+//   import { setupFerrum } from '@/monaco';
+//
+//   onMounted(() => {
+//       setupFerrum(monaco);
+//       const editor = monaco.editor.create(containerRef.value, {
+//           language: 'ferrum',
+//           theme:    'ferrum-dark',
+//           value:    initialSource,
+//       });
+//   });
+
+export { registerFerrumLanguage } from './ferrumLanguage';
+export { registerFerrumTheme    } from './ferrumTheme';
+export { registerFerrumCompletion } from './ferrumCompletion';
+export {
+    applyFerrumDiagnostics,
+    clearFerrumDiagnostics,
+    parseFerrumOutput,
+    type FerrumDiagnostic,
+} from './ferrumDiagnostics';
+
+import type * as Monaco from 'monaco-editor';
+import { registerFerrumLanguage  } from './ferrumLanguage';
+import { registerFerrumTheme     } from './ferrumTheme';
+import { registerFerrumCompletion } from './ferrumCompletion';
+
+/// One-shot setup — call once after monaco is loaded.
+export function setupFerrum(monaco: typeof Monaco): void {
+    registerFerrumLanguage(monaco);
+    registerFerrumTheme(monaco);
+    registerFerrumCompletion(monaco);
+}
+// ╚══ END FILE ══╝
+
+
+// ================================================================
+// PROJECT STRUCTURE
+// ================================================================
+//
+// ferrum-vscode/
+// ├── package.json
+// ├── tsconfig.json
+// ├── language-configuration.json
+// ├── images/
+// │   └── ferrum-icon.png          ← (provide your own 128×128 icon)
+// ├── syntaxes/
+// │   └── ferrum.tmLanguage.json
+// ├── themes/
+// │   └── ferrum-dark.json
+// ├── snippets/
+// │   └── ferrum.json
+// ├── src/
+// │   ├── extension.ts
+// │   └── ferrumLsp.ts
+// ├── monaco/
+// │   ├── index.ts
+// │   ├── ferrumLanguage.ts
+// │   ├── ferrumTheme.ts
+// │   ├── ferrumCompletion.ts
+// │   └── ferrumDiagnostics.ts
+// └── .vscode/
+//     └── launch.json
+//
+// ================================================================
+// GETTING STARTED
+// ================================================================
+//
+// VS Code extension:
+//   cd ferrum-vscode
+//   npm install
+//   npm run compile
+//   Press F5 to launch Extension Development Host
+//
+// Publish to VS Code Marketplace:
+//   npx @vscode/vsce package
+//   npx @vscode/vsce publish
+//
+// Monaco in Tauri+Vue:
+//   npm install monaco-editor
+//   import { setupFerrum } from './monaco';
+//   setupFerrum(monaco);   // call once on app mount
+//
+//   After ferrum check completes (via Tauri invoke):
+//   applyFerrumDiagnostics(monaco, model, compilerOutput);
+//
+// ================================================================
+// NEXT STEP: ferrum lsp --stdio
+// ================================================================
+//
+// The LSP client in ferrumLsp.ts is wired and ready.
+// When you add `ferrum lsp --stdio` to the compiler, the server
+// receives textDocument/didOpen + didChange notifications and
+// publishes diagnostics without needing to save first.
+//
+// The server would implement:
+//   initialize          → return capabilities
+//   textDocument/didChange → run semantic::analyse() on the buffer
+//                            → publish diagnostics
+//   textDocument/hover  → look up Expr.ty at cursor position
+//   textDocument/completion → return symbol table identifiers
+//
+// All the data is already in the compiler pipeline.
+// The LSP server is a thin wrapper around what already exists.
+// ================================================================

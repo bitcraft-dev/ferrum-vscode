@@ -1,0 +1,149 @@
+{
+    "name": "ferrum-lang",
+    "displayName": "Ferrum",
+    "description": "Language support for the Ferrum embedded DSL (.fe files)",
+    "version": "0.1.0",
+    "publisher": "ferrum-lang",
+    "engines": { "vscode": "^1.85.0" },
+    "categories": ["Programming Languages"],
+    "icon": "images/ferrum-icon.png",
+    "keywords": ["ferrum", "embedded", "microbit", "rp2040", "iot", "education"],
+    "repository": { "type": "git", "url": "https://github.com/ferrum-lang/ferrum-vscode" },
+
+    "activationEvents": [],
+
+    "main": "./out/extension.js",
+
+    "contributes": {
+        "languages": [
+            {
+                "id": "ferrum",
+                "aliases": ["Ferrum", "ferrum"],
+                "extensions": [".fe"],
+                "configuration": "./language-configuration.json"
+                
+            }
+        ],
+        "grammars": [
+            {
+                "language": "ferrum",
+                "scopeName": "source.ferrum",
+                "path": "./syntaxes/ferrum.tmLanguage.json"
+            }
+        ],
+        "themes": [
+            {
+                "label": "Ferrum Dark",
+                "uiTheme": "vs-dark",
+                "path": "./themes/ferrum-dark.json"
+            }
+        ],
+        "snippets": [
+            {
+                "language": "ferrum",
+                "path": "./snippets/ferrum.json"
+            }
+        ],
+        "commands": [
+            {
+                "command": "ferrum.compile",
+                "title": "Ferrum: Compile",
+                "icon": "$(play)"
+            },
+            {
+                "command": "ferrum.check",
+                "title": "Ferrum: Check (type-check only)"
+            },
+            {
+                "command": "ferrum.showTokens",
+                "title": "Ferrum: Show Token Stream (debug)"
+            },
+            {
+                "command": "ferrum.showAst",
+                "title": "Ferrum: Show AST (debug)"
+            }
+        ],
+        "menus": {
+            "editor/title": [
+                {
+                    "command": "ferrum.compile",
+                    "when": "resourceExtname == .fe",
+                    "group": "navigation"
+                }
+            ]
+        },
+        "configuration": {
+            "title": "Ferrum",
+            "properties": {
+                "ferrum.compilerPath": {
+                    "type": "string",
+                    "default": "ferrum",
+                    "description": "Path to the ferrum compiler binary"
+                },
+                "ferrum.enableLsp": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Enable the Ferrum language server for inline diagnostics"
+                },
+                "ferrum.autoCheckOnSave": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Run ferrum check automatically on file save"
+                }
+            }
+        },
+        "problemMatchers": [
+            {
+                "name": "ferrum",
+                "owner": "ferrum",
+                "fileLocation": ["relative", "${workspaceFolder}"],
+                "pattern": [
+                    {
+                        "regexp": "^\\[(.*?):(\\d+):(\\d+)\\]\\s+(error|warning)\\[([A-Z]\\d+)\\]:\\s+(.*)$",
+                        "file": 1,
+                        "line": 2,
+                        "column": 3,
+                        "severity": 4,
+                        "code": 5,
+                        "message": 6
+                    },
+                    {
+                        "regexp": "^\\s+Suggestion:\\s+(.*)$",
+                        "message": 1,
+                        "loop": true
+                    }
+                ]
+            }
+        ],
+        "taskDefinitions": [
+            {
+                "type": "ferrum",
+                "required": ["task"],
+                "properties": {
+                    "task": {
+                        "type": "string",
+                        "enum": ["compile", "check"]
+                    }
+                }
+            }
+        ]
+    },
+
+    "scripts": {
+        "vscode:prepublish": "npm run compile",
+        "compile": "tsc -p ./",
+        "watch": "tsc -watch -p ./",
+        "lint": "eslint src --ext ts"
+    },
+
+    "devDependencies": {
+        "@types/node": "^20.0.0",
+        "@types/vscode": "^1.85.0",
+        "typescript": "^5.3.0",
+        "@vscode/vsce": "^2.22.0"
+    },
+
+    "dependencies": {
+        "vscode-languageclient": "^9.0.1"
+    }
+}

@@ -1,0 +1,262 @@
+{
+	"Minimal program skeleton": {
+		"prefix": "ferrum",
+		"body": [
+			"CONFIG {",
+			"    TARGET = \"${1|microbit_v2,rp2040|}\"",
+			"    DEBUG  = TRUE",
+			"}",
+			"",
+			"DEFINE ${2:Led} AS OUTPUT",
+			"",
+			"CREATE ${2:Led} ${3:led} ON PIN ${4:13}",
+			"",
+			"RUN {",
+			"    LOOP {",
+			"        $0",
+			"    }",
+			"}"
+		],
+		"description": "Minimal Ferrum program with CONFIG, DEFINE, CREATE, RUN"
+	},
+
+	"CONFIG block": {
+		"prefix": "config",
+		"body": [
+			"CONFIG {",
+			"    TARGET      = \"${1|microbit_v2,rp2040|}\"",
+			"    DEBUG       = ${2|TRUE,FALSE|}",
+			"    DEBOUNCE_MS = ${3:50}",
+			"}"
+		],
+		"description": "CONFIG section"
+	},
+
+	"DEFINE simple device": {
+		"prefix": "define",
+		"body": [
+			"DEFINE ${1:DeviceName} AS ${2|INPUT,OUTPUT,ANALOG_INPUT,PWM,DISPLAY,PULSE|}"
+		],
+		"description": "DEFINE a simple device type"
+	},
+
+	"DEFINE composite device": {
+		"prefix": "definec",
+		"body": [
+			"DEFINE ${1:DeviceName} AS {",
+			"    ${2:OUTPUT},",
+			"    ${3:PWM BRIGHTNESS}",
+			"}"
+		],
+		"description": "DEFINE a composite device type"
+	},
+
+	"CREATE single pin": {
+		"prefix": "create",
+		"body": [
+			"CREATE ${1:DeviceType} ${2:instance} ON PIN ${3:13}"
+		],
+		"description": "CREATE a device on a single pin"
+	},
+
+	"CREATE composite with INIT": {
+		"prefix": "createc",
+		"body": [
+			"CREATE ${1:DeviceType} ${2:instance} ON {",
+			"    ${3:output}: PIN ${4:3},",
+			"    ${5:brightness}: PIN ${6:4}",
+			"} INIT {",
+			"    ${3:output}: ${7|LOW,HIGH|},",
+			"    ${5:brightness}: ${8:0.0}",
+			"}"
+		],
+		"description": "CREATE a composite device with named pins and INIT"
+	},
+
+	"DECLARE variable": {
+		"prefix": "decl",
+		"body": [
+			"DECLARE ${1|Integer,Decimal,Percentage,Boolean,String,Byte|} ${2:name} INIT ${3:0}"
+		],
+		"description": "DECLARE a variable"
+	},
+
+	"DECLARE constant": {
+		"prefix": "const",
+		"body": [
+			"DECLARE CONSTANT ${1|Integer,Decimal,Percentage,Boolean,String,Byte|} ${2:NAME} = ${3:0}"
+		],
+		"description": "DECLARE a constant"
+	},
+
+	"FUNCTION with data params": {
+		"prefix": "fn",
+		"body": [
+			"FUNCTION ${1:name} ${2:Integer}: ${3:param} {",
+			"    $0",
+			"}"
+		],
+		"description": "FUNCTION definition with data parameters"
+	},
+
+	"FUNCTION with device BORROW": {
+		"prefix": "fnborrow",
+		"body": [
+			"FUNCTION ${1:name} BORROW ${2:DeviceType}: ${3:device} {",
+			"    $0",
+			"}"
+		],
+		"description": "FUNCTION definition that BORROWs a device"
+	},
+
+	"FUNCTION with device GIVE": {
+		"prefix": "fngive",
+		"body": [
+			"FUNCTION ${1:name} GIVE ${2:DeviceType}: ${3:device} {",
+			"    $0",
+			"}"
+		],
+		"description": "FUNCTION definition that takes GIVE ownership"
+	},
+
+	"FUNCTION with RETURN": {
+		"prefix": "fnret",
+		"body": [
+			"FUNCTION ${1:name} ${2:Integer}: ${3:param} {",
+			"    $0",
+			"    RETURN ${4:value}",
+			"}"
+		],
+		"description": "FUNCTION definition with RETURN"
+	},
+
+	"RUN LOOP": {
+		"prefix": "run",
+		"body": [
+			"RUN {",
+			"    LOOP {",
+			"        $0",
+			"    }",
+			"}"
+		],
+		"description": "RUN section with LOOP"
+	},
+
+	"EVERY block": {
+		"prefix": "every",
+		"body": [
+			"EVERY ${1:1000}ms {",
+			"    $0",
+			"}"
+		],
+		"description": "EVERY scheduled block"
+	},
+
+	"IF block": {
+		"prefix": "if",
+		"body": [
+			"IF ${1:condition} {",
+			"    $0",
+			"}"
+		],
+		"description": "IF statement"
+	},
+
+	"IF ELSE block": {
+		"prefix": "ifelse",
+		"body": [
+			"IF ${1:condition} {",
+			"    $0",
+			"} ELSE {",
+			"    $2",
+			"}"
+		],
+		"description": "IF/ELSE statement"
+	},
+
+	"FOR RANGE loop": {
+		"prefix": "for",
+		"body": [
+			"FOR ${1:i} IN RANGE ${2:0}, ${3:9} {",
+			"    $0",
+			"}"
+		],
+		"description": "FOR loop over a range"
+	},
+
+	"FOR array loop": {
+		"prefix": "fora",
+		"body": [
+			"FOR ${1:item} IN ${2:array} {",
+			"    $0",
+			"}"
+		],
+		"description": "FOR loop over an array"
+	},
+
+	"TURN HIGH": {
+		"prefix": "high",
+		"body": ["TURN ${1:device} HIGH"],
+		"description": "TURN device HIGH"
+	},
+
+	"TURN LOW": {
+		"prefix": "low",
+		"body": ["TURN ${1:device} LOW"],
+		"description": "TURN device LOW"
+	},
+
+	"SET with qualifier": {
+		"prefix": "set",
+		"body": [
+			"SET ${1:device} ${2|BRIGHTNESS,SPEED,ANGLE,RED,GREEN,BLUE|} ${3:0.5}"
+		],
+		"description": "SET device PWM qualifier"
+	},
+
+	"READ_PERCENT": {
+		"prefix": "read",
+		"body": ["READ_PERCENT ${1:sensor}"],
+		"description": "Read analog sensor as percentage"
+	},
+
+	"DELAY ms": {
+		"prefix": "delay",
+		"body": ["DELAY ${1:500}ms"],
+		"description": "DELAY in milliseconds"
+	},
+
+	"CALL function": {
+		"prefix": "call",
+		"body": ["CALL ${1:function} ${2:args}"],
+		"description": "CALL a function"
+	},
+
+	"DECLARE inline from CALL": {
+		"prefix": "let",
+		"body": [
+			"DECLARE ${1|Integer,Decimal,Percentage,Boolean,String,Byte|} ${2:result} = CALL ${3:function} ${4:args}"
+		],
+		"description": "Capture return value from CALL"
+	},
+
+	"Inline IF expression": {
+		"prefix": "ifexpr",
+		"body": [
+			"IF ${1:condition} { ${2:value_a} } ELSE { ${3:value_b} }"
+		],
+		"description": "Inline IF expression"
+	},
+
+	"BORROW call": {
+		"prefix": "borrow",
+		"body": ["CALL ${1:function} BORROW ${2:device}"],
+		"description": "CALL with BORROW ownership"
+	},
+
+	"GIVE call": {
+		"prefix": "give",
+		"body": ["CALL ${1:function} GIVE ${2:device}"],
+		"description": "CALL with GIVE ownership"
+	}
+}
