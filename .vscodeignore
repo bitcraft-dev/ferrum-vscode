@@ -1,0 +1,10 @@
+.vscode/**
+.gitignore
+src/**
+out/**/*.map
+**/*.ts
+tsconfig.json
+bun.lock
+code
+.eslintrc*
+**/.gitkeep

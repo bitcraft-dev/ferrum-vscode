@@ -23,11 +23,21 @@ export function activate(context: vscode.ExtensionContext) {
 	);
 
 	// -- Auto-check on save ---------------------------------------
+	//
+	// This predates the LSP: it was the only way to get diagnostics
+	// (via the CLI + problem matcher) before `ferrum lsp --stdio`
+	// existed. Now that the LSP is live, it reports the exact same
+	// errors continuously as you type — no save needed — so running
+	// this too would just be redundant noise: a shell task popping
+	// open the terminal panel and printing "terminated with exit
+	// code: 1" for an error the editor already has a squiggle on.
+	// Keep it only as a fallback for when the LSP is off.
 
 	context.subscriptions.push(
 		vscode.workspace.onDidSaveTextDocument((doc) => {
 			const config = vscode.workspace.getConfiguration('ferrum');
-			if (doc.languageId === 'ferrum' && config.get<boolean>('autoCheckOnSave', true)) {
+			const lspActive = config.get<boolean>('enableLsp', true);
+			if (doc.languageId === 'ferrum' && !lspActive && config.get<boolean>('autoCheckOnSave', true)) {
 				runFerrum('check', context, doc.fileName);
 			}
 		})
